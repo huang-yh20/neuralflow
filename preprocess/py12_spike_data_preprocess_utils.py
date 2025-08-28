@@ -1,28 +1,26 @@
-'''
-请帮我实现一个预处理spike数据的函数：
-这个函数的输入是以下格式的spike data:
-spiketimes format, where the data is numpy array of size
-    (trial_count * time_points, num_neuron). In this case, all the trial have the same number of time points.
-    The element of this array is the number of spikes at this time point.
-
-这个函数的输出是以下格式的spike data:
-spiketimes format, where the data is numpy array of size
-        (num_neuron, N) of type object, N is the number of trials. Each of
-        the entries is 1D array that specify spiketimes of each neuron on
-        each trial. In this case time_epoch array specify each trial start
-        and end times. For the example above, the spiketimes format would
-        be the following:
-            spiketimes = np.array(
-                [
-                    [np.array([], dtype=np.float64), np.array([0.05])],
-                    [np.array([0.05]), np.array([3.05])],
-                    [np.array([0.55]), np.array([1.05, 6.05])]
-                    ],
-                dtype=object
-                )
-            timeepoch = [(0, 1.55), (0, 10.05)]
-'''
 import numpy as np
+
+def clean_spike_data(spike_counts, trial_count, timeepoch):
+    # 遍历每一个trial, 如果某个trial的spike_counts全为0, 则将其剔除
+    total_rows, num_neuron = spike_counts.shape
+    time_points = total_rows // trial_count
+    non_empty_trials = []
+    for trial_idx in range(trial_count):
+        if not np.all(spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :] == 0):
+            non_empty_trials.append(trial_idx)
+        else:
+            print(f"Removing empty trial: {trial_idx}")
+    # 根据非空trial的索引，从原始数据中提取对应trial的数据（连续time_points行）
+    filtered_trials = [
+        spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :]
+        for trial_idx in non_empty_trials
+    ]
+    new_spike_counts = np.vstack(filtered_trials)
+    
+    # 如果timeepoch是列表，则只保留对应非空trial的时间段
+    new_timeepoch = [timeepoch[i] for i in non_empty_trials]
+    
+    return new_spike_counts, new_timeepoch
 
 def preprocess_spike_data(spike_counts, trial_count, timeepoch):
     """
@@ -52,9 +50,13 @@ def preprocess_spike_data(spike_counts, trial_count, timeepoch):
         trial_data = spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :]
         
         # For each neuron, repeat the time points by the corresponding spike counts (vectorized over time)
-        spiketimes[:, trial_idx] = np.array([
-            np.repeat(times, trial_data[:, neuron].astype(int))
-            for neuron in range(num_neuron)
-        ], dtype=object)
+        try:
+
+            spiketimes[:, trial_idx] = np.array([
+                np.repeat(times, trial_data[:, neuron].astype(int))
+                for neuron in range(num_neuron)
+            ], dtype=object)
+        except ValueError as e:
+            print(f"Error processing trial {trial_idx}: {e}")
     
     return spiketimes, timeepoch
