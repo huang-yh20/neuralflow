@@ -88,3 +88,9 @@ target/
 
 # data
 data/*
+
+# logs
+logs/*
+
+# saved
+saved/*

@@ -1,15 +1,20 @@
 import numpy as np
 
-def clean_spike_data(spike_counts, trial_count, timeepoch):
-    # 遍历每一个trial, 如果某个trial的spike_counts全为0, 则将其剔除
+# 遍历每个trial，如果某个trial中所有神经元总放电数为0，则将这个trial剔除
+def clean_spike_data_1(spike_counts, trial_count, timeepoch):
     total_rows, num_neuron = spike_counts.shape
     time_points = total_rows // trial_count
     non_empty_trials = []
+    # 遍历每个trial，如果某个trial中所有神经元总放电数为0，则将这个trial剔除
     for trial_idx in range(trial_count):
-        if not np.all(spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :] == 0):
+        trial_data = spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :]
+        # 计算每个神经元在trial中的总放电数
+        neuron_totals = np.sum(trial_data)
+        # 如果所有神经元的总放电数都大于0，则保留该trial；否则，剔除
+        if neuron_totals > 0:
             non_empty_trials.append(trial_idx)
         else:
-            print(f"Removing empty trial: {trial_idx}")
+            print(f"Removing trial {trial_idx} due to at least one neuron with 0 spikes")
     # 根据非空trial的索引，从原始数据中提取对应trial的数据（连续time_points行）
     filtered_trials = [
         spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :]
@@ -20,7 +25,37 @@ def clean_spike_data(spike_counts, trial_count, timeepoch):
     # 如果timeepoch是列表，则只保留对应非空trial的时间段
     new_timeepoch = [timeepoch[i] for i in non_empty_trials]
     
-    return new_spike_counts, new_timeepoch
+    # 计算新的trial数量
+    new_trial_count = len(non_empty_trials)
+    
+    return new_spike_counts, new_trial_count, new_timeepoch
+
+
+# 遍历每个神经元，如果某个神经元在任意一个trial中的总放电数为0，则将这个神经元剔除
+# 但实际上还是有问题，trial一多就没几个神经元了
+def clean_spike_data_2(spike_counts, trial_count, timeepoch):
+    total_rows, num_neuron = spike_counts.shape
+    time_points = total_rows // trial_count
+    # 重构为 (trial_count, time_points, num_neuron)
+    reshaped = spike_counts.reshape(trial_count, time_points, num_neuron)
+    # 对每个trial计算每个神经元的总放电数, 得到 shape (trial_count, num_neuron)
+    trial_spike_sums = np.sum(reshaped, axis=1)
+    
+    non_zero_neurons = []
+    for neuron in range(num_neuron):
+        # 如果在所有trial中，该神经元的放电总数均大于0，则保留
+        if np.all(trial_spike_sums[:, neuron] > 0):
+            non_zero_neurons.append(neuron)
+        else:
+            print(f"Removing neuron {neuron} due to 0 spikes in at least one trial")
+    # 筛选出保留的神经元列
+    new_spike_counts = spike_counts[:, non_zero_neurons]
+    
+    # 返回新的神经元数量（trial_count和timeepoch保持不变）
+    new_neuron_count = len(non_zero_neurons)
+    
+    return new_spike_counts, trial_count, timeepoch
+
 
 def preprocess_spike_data(spike_counts, trial_count, timeepoch):
     """

@@ -5,6 +5,7 @@ Main optimization class
 """
 
 import logging
+import traceback
 import numpy as np
 import os
 import sys
