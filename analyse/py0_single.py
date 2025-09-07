@@ -14,16 +14,31 @@ from neuralflow.feature_complexity.fc_base import FC_tools
 parser = argparse.ArgumentParser(description="Process brain_region and date parameters.")
 parser.add_argument('--brain_region', required=True, help="Brain region parameter")
 parser.add_argument('--date', required=True, help="Date parameter")
+parser.add_argument('--alpha', default=0.05, help="Alpha parameter")
+parser.add_argument('--task_name', required=True, help="task name")
+parser.add_argument('--init_fr', default='unity_slope', help="initialization for firing rate")
 args = parser.parse_args()
 
 brain_region = args.brain_region
 date = args.date
+task_name = args.task_name
+alpha = float(args.alpha)
+init_fr = args.init_fr
+
+if init_fr == 'unity_slope':
+    slope = 1
+elif init_fr == 'constant':
+    slope = 0
+else:
+    raise ValueError("init_fr must be either 'unity_slope' or 'constant'")
+
+mini_batch_size = 20  # Define mini-batch size for neuron filtering
 
 # ---------- Load Data ----------
 path = f"./data/raw_data/neural_data_{brain_region}/neural_data_{date}_{brain_region}.mat"
 data = scipy.io.loadmat(path)
 spike_counts_ori = data['region_data']
-trial_counts = data['trial_count'].squeeze()
+trial_counts = int(data['trial_count'].squeeze())
 num_neurons_ori = spike_counts_ori.shape[1]
 
 # ---------- Preprocessing ----------
@@ -42,19 +57,31 @@ spiketimes, timeepoch = preprocess_spike_data(spike_counts, trial_counts, time_e
 
 # ---------- Manual cleaning and experimental setup ----------
 # Set the experimental trial count and number of neurons to use (like in py0_try.ipynb)
-num_trials = 5
-num_neurons = 5  # Use only the first 5 neurons for analysis
+num_trials = None 
+num_neurons = None # 取这个数字是因为反复实验后发现如果太大就会出现各种NaN的情况 
+
+# Define experimental trials
+num_trials = spiketimes.shape[1] if num_trials is None else num_trials
 trial1 = np.arange(0, num_trials, 2)
 trial2 = np.arange(1, num_trials, 2)
 
-# Remove neurons that have no spikes in all trials of trial1 or trial2
+# # Remove neurons that have no spikes in all trials of trial1 or trial2
+# non_zero_neurons = []
+# for neuron in range(num_neurons_ori):
+#     if not all(len(spiketimes[neuron, t]) == 0 for t in trial1) and \
+#        not all(len(spiketimes[neuron, t]) == 0 for t in trial2):
+#         non_zero_neurons.append(neuron)
+
+# 检查spiketimes中的数据，如果一个神经元空的trial数量超过minibatch大小，那么就剔除这个神经元
 non_zero_neurons = []
+clean_thres = mini_batch_size if mini_batch_size < num_trials/2 else int(num_trials/2 - 1)
 for neuron in range(num_neurons_ori):
-    if not all(len(spiketimes[neuron, t]) == 0 for t in trial1) and \
-       not all(len(spiketimes[neuron, t]) == 0 for t in trial2):
+    if sum(len(spiketimes[neuron, t]) == 0 for t in range(num_trials)) < clean_thres:  # minibatch size = 20
         non_zero_neurons.append(neuron)
+
 spiketimes = spiketimes[non_zero_neurons, :]
 
+num_neurons = len(non_zero_neurons) if num_neurons is None else min(num_neurons, len(non_zero_neurons))
 # For the experiment, select only the first num_neurons neurons
 spiketimes1 = spiketimes[0:num_neurons, trial1]
 timeepoch1 = [timeepoch[i] for i in trial1]
@@ -76,7 +103,7 @@ init_model = neuralflow.model.new_model(
     peq_model={"model": "uniform", "params": {}},
     p0_model={"model": "cos_square", "params": {}},
     D=1,
-    fr_model=[{"model": "linear", "params": {"slope": 1, "bias": 100}}] * num_neurons,
+    fr_model=[{"model": "linear", "params": {"slope": slope, "bias": 100}}] * num_neurons,
     params_size={'peq': 1, 'D': 1, 'fr': 1, 'p0': 1},
     grid=grid,
     with_cuda=True
@@ -85,14 +112,14 @@ init_model = neuralflow.model.new_model(
 optimizer = 'ADAM'
 opt_params = {
     'max_epochs': 50,
-    'mini_batch_number': 20,
+    'mini_batch_number': mini_batch_size,
     'params_to_opt': ['F', 'F0', 'D', 'Fr', 'C'],
-    'learning_rate': {'alpha': 0.05}
+    'learning_rate': {'alpha': alpha}
 }
 ls_options = {
-    'C_opt': {'epoch_schedule': [0, 1, 5, 30], 'nSearchPerEpoch': 3, 'max_fun_eval': 2},
-    'D_opt': {'epoch_schedule': [0, 1, 5, 30], 'nSearchPerEpoch': 3, 'max_fun_eval': 25}
-}
+    'C_opt': {'epoch_schedule': [], 'nSearchPerEpoch': 3, 'max_fun_eval': 2},
+    'D_opt': {'epoch_schedule': [], 'nSearchPerEpoch': 3, 'max_fun_eval': 25}
+} # 暂时不对结果进行line search优化
 boundary_mode = 'absorbing'
 
 optimization1 = neuralflow.optimization.Optimization(
@@ -114,7 +141,7 @@ init_model = neuralflow.model.new_model(
     peq_model={"model": "uniform", "params": {}},
     p0_model={"model": "cos_square", "params": {}},
     D=1,
-    fr_model=[{"model": "linear", "params": {"slope": 1, "bias": 100}}] * num_neurons,
+    fr_model=[{"model": "linear", "params": {"slope": slope, "bias": 100}}] * num_neurons,
     params_size={'peq': 1, 'D': 1, 'fr': 1, 'p0': 1},
     grid=grid,
     with_cuda=True
@@ -134,10 +161,10 @@ optimization2.run_optimization()
 
 # ---------- Save optimization results --------------
 os.makedirs("./saved", exist_ok=True)
-with open(f"./saved/neural_data_{brain_region}_{date}_opt1.pkl", "wb") as f:
+with open(f"./saved/neural_data_{brain_region}_{date}_{task_name}_opt1.pkl", "wb") as f:
     pkl.dump(optimization1.results, f)
 
-with open(f"./saved/neural_data_{brain_region}_{date}_opt2.pkl", "wb") as f:
+with open(f"./saved/neural_data_{brain_region}_{date}_{task_name}_opt2.pkl", "wb") as f:
     pkl.dump(optimization2.results, f)
 
 # ---------- Feature Complexity and Consistency Analysis ----------
@@ -152,7 +179,7 @@ FCs1, min_inds_1, FCs2, min_inds_2, JS, FC_opt_ind = fc.FeatureConsistencyAnalys
 invert = fc.NeedToReflect(optimization1.results, optimization2.results)
 
 # ---------- Plotting ----------
-output_folder = f"figs/{brain_region}_{date}"
+output_folder = f"figs/{brain_region}_{date}_{task_name}"
 os.makedirs(output_folder, exist_ok=True)
 
 # Predefined colors for consistency

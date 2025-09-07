@@ -195,63 +195,11 @@ class Optimization:
         Sets
         -------
         self.results : dict
-            The optimization results. Contains the following:
-                iter_num : numpy array, dtype = int
-                    Epoch numbers on which the model is saved. The shape is
-                    equal to save_options['schedule'].size. If 'schedule' is
-                    not provided in save_options, it will be equal to
-                    self.nepochs.
-                logliks : numpy array
-                    Training loglikelihoods, recorded on every epoch. The
-                    shape is (num_datasamples, self.nepochs).
-                logliksCV : numpy array
-                    Validation loglikelihoods, recorded on every epoch. Only
-                    present if dataCV is not None. The shape is
-                    (num_datasamples, self.nepochs).
-                peq : list
-                    List that provides peq on the epochs number specified in
-                    iter_num. The length is self.results['iter_num'].size.
-                    Each element is numpy array of size (num_peq_models,
-                    grid.N), where num_peq_models is the number of peq models
-                    (which equals to num_datasamples if peq is non-shared, or
-                    1 if peq is shared parameter, num_peq_models =
-                    self.optimizer.model.params_size['peq']). Only presented if
-                    'F' is optimized.
-                D : list
-                    List of D on the epochs number specified in iter_num. The
-                    length is self.results['iter_num'].size. Each element is
-                    numpy array of size self.optimizer.model.params_size['D'].
-                    Only presented if 'D' is optimized.
-                p0 : list
-                    List of p0 on the epochs number specified in iter_num. The
-                    length is self.results['iter_num'].size. Each element is
-                    numpy array of size (num_p0_models, grid.N), where
-                    num_p0_models is the number of p0 models (which equals to
-                    num_datasamples if p0 is non-shared, or 1 if p0 is shared
-                    parameter, num_p0_models =
-                    self.optimizer.model.params_size['p0']). Only presented if
-                    'F0' is optimized.
-                fr : list
-                    List of fr on the epochs number specified in iter_num. The
-                    length is self.results['iter_num'].size. Each element is
-                    numpy array of size (num_fr_models, grid.N, num_neurons),
-                    where num_fr_models is the number of fr models (which
-                    equals to num_datasamples if fr is non-shared, or 1 if fr
-                    is shared parameter, num_fr_models =
-                    self.optimizer.model.params_size['fr']). Only presented if
-                    'Fr' or 'C' are optimized.
-
-        If specified in save_opts, this will be also saved periodically to the
-        persistance local storage.
-
+            The optimization results. Contains various recorded quantities.
         Returns
         -------
         None.
-
         """
-
-        # For convinience, define aliases for some of the frequently used
-        # variables.
         optimizer = self.optimizer
         all_iterations = np.sum(optimizer.iter_in_epoch)
         num_samples = optimizer.num_datasamples
@@ -260,47 +208,34 @@ class Optimization:
         save_opts = optimizer.save_options
         opt_params = optimizer.opt_options['params_to_opt']
 
-        # Pointer to the class varaible that holds model parameters
+        # Pointer to the class variables that holds model parameters
         if self.device == 'CPU':
             model_params = self.optimizer.model
         else:
             model_params = self.optimizer.model.cuda_var
 
-        # For persistance storage of the intermediate results. start tracks
-        # the starting index of model parameters in self.results,
-        # start_ll tracks the starting index of loglik
+        # For persistance storage of the intermediate results.
         start = start_ll = 0
-
-        # index of the next epoch when the results will be saved to
-        # self.results
+        # index of the next epoch when the results will be saved to self.results
         next_save = self.new_sim
 
         # Save initial likelihoods and model params to the results structure
         if self.new_sim:
             for cur_samp in range(num_samples):
                 # If number of batches > 1, need to compute likelihood now.
-                # Otherwise it will be computed along with the gradients and
-                # recorded later
                 if optimizer.iter_in_epoch[cur_samp] > 1:
-                    # Compute initial likelihood
                     self.compute_tr_loglik(cur_samp, 0)
                 self.compute_val_loglik(cur_samp, 0)
-
-            # Save initial params to the results
             for param in opt_params:
                 # Don't record fr twice if C and Fr are optimized
                 if 'Fr' in opt_params and 'C' in opt_params and param == 'C':
                     continue
-                param = self.optimizer.opt_model_map[param]
-                self.results[param].append(
-                    getattr(model_params, param).copy()
+                param_mapped = self.optimizer.opt_model_map[param]
+                self.results[param_mapped].append(
+                    getattr(model_params, param_mapped).copy()
                 )
 
-        for i, iEpoch in enumerate(
-                tqdm(range(self.epoch_start, self.epoch_end))
-        ):
-
-            # Shuffle data
+        for i, iEpoch in enumerate(tqdm(range(self.epoch_start, self.epoch_end))):
             shuffle_trials = [
                 np.random.permutation(optimizer.num_trial[samp])
                 for samp in range(num_samples)
@@ -312,13 +247,14 @@ class Optimization:
                         for i in range(num_samples)
                     ],
                     axis=0
-                ).astype(int))
+                ).astype(int)
+            )
             # Counter of iterations for each data sample
             iter_per_samp = np.zeros(num_samples, dtype=int) - 1
 
+
             for iIter in range(all_iterations):
                 logger.debug(f'Epoch {iEpoch}, Iteration {iIter}')
-
                 cur_samp = shuffle_datasamples[iIter]
                 iter_per_samp[cur_samp] += 1
 
@@ -329,10 +265,7 @@ class Optimization:
                     cur_mb_size = optimizer.last_batch_size[cur_samp]
 
                 # Take the data for this minibatch
-                start_ind = (
-                    optimizer.mini_batch_size[cur_samp] *
-                    iter_per_samp[cur_samp]
-                )
+                start_ind = optimizer.mini_batch_size[cur_samp] * iter_per_samp[cur_samp]
                 end_ind = start_ind + cur_mb_size
                 data_mb = [
                     optimizer.get_dataTR(cur_samp)[trial]
@@ -349,46 +282,29 @@ class Optimization:
                     # index of the current param
                     param_num = min(
                         cur_samp,
-                        optimizer.model.params_size[
-                            optimizer.opt_model_map[param]] - 1
+                        optimizer.model.params_size[self.optimizer.opt_model_map[param]] - 1
                     )
                     if param in self.optimizer.shared_params:
                         cur_iter = iIter
                     else:
                         cur_iter = iter_per_samp[cur_samp]
-                    if (
-                        (param == 'C' or param == 'D') and
+                    if ((param == 'C' or param == 'D') and
                         iEpoch in ls_opts[f'{param}_opt']['epoch_schedule'] and
-                        cur_iter in
-                        ls_opts[f'{param}_opt']['iter_schedule'][param_num]
-                    ):
-                        # Line search update
+                        cur_iter in ls_opts[f'{param}_opt']['iter_schedule'][param_num]):
                         self._update_params_ls(param, cur_samp, param_num)
                     else:
-                        gd_update = self._update_rule(
-                            gradients, param, param_num
-                        )
-                        # Gradient-based update
+                        gd_update = self._update_rule(gradients, param, param_num)
                         self._update_param_gd(param, gd_update, param_num)
 
-            # Update loglik
+            # Update loglik for this epoch
             ll_index = i + self.new_sim
             for cur_samp in range(num_samples):
                 if optimizer.iter_in_epoch[cur_samp] == 1:
-                    # loglik is already computed, but before the parameters
-                    # were updated
-                    self.results['logliks'][cur_samp, ll_index - 1] = (
-                        gradients['loglik']
-                    )
+                    self.results['logliks'][cur_samp, ll_index - 1] = gradients['loglik']
                 else:
-                    # For batched optimization, need to compute likelihood
-                    # on a full training dataset
                     self.compute_tr_loglik(cur_samp, ll_index)
-
-                # Validation loglik
                 self.compute_val_loglik(cur_samp, ll_index)
 
-            # Save model
             if iEpoch == save_opts['schedule'][next_save]:
                 for param in opt_params:
                     prim_param = self.optimizer.opt_model_map[param]
@@ -401,24 +317,14 @@ class Optimization:
                 self.results['iter_num'][next_save] = iEpoch
                 next_save += 1
 
-            # Save intermediate results to persistence storage
-            if (
-                    save_opts['path'] is not None and
-                    (i+1) % save_opts['stride'] == 0
-            ):
-                # Update loglik for GD - only for 1-batch mode because of
-                # loglik lagging
+            if save_opts['path'] is not None and (i+1) % save_opts['stride'] == 0:
                 for cur_samp in range(num_samples):
                     if self.optimizer.iter_in_epoch[cur_samp] == 1:
                         self.compute_tr_loglik(cur_samp, ll_index)
-
                 self._save_results(start, next_save, start_ll, ll_index + 1)
-
-                # Update starting saving points
                 start = next_save
                 start_ll = ll_index + 1
 
-            # flush std out
             sys.stdout.flush()
 
         # Calculate the last loglik (unless already calculated)
@@ -427,22 +333,18 @@ class Optimization:
                 if optimizer.iter_in_epoch[cur_samp] == 1:
                     self.compute_tr_loglik(cur_samp, i + self.new_sim)
 
-        # Save the last portion of the results
+        # Save the final portion of the results
         if save_opts['path'] is not None and start < next_save:
-            self._save_results(start, next_save, start_ll,
-                               i + 1 + self.new_sim)
+            self._save_results(start, next_save, start_ll, i + 1 + self.new_sim)
 
-        # Transfer results from GPU to CPU
+        # Transfer results from GPU to CPU if needed
         if self.device == 'GPU':
             for key in self.results.keys():
                 if type(self.results[key]) is list:
                     for i in range(len(self.results[key])):
-                        self.results[key][i] = self.lib.asnumpy(
-                            self.results[key][i]
-                        )
+                        self.results[key][i] = self.lib.asnumpy(self.results[key][i])
                 else:
                     self.results[key] = self.lib.asnumpy(self.results[key])
-
         logger.info('Optimization completed')
 
     def compute_tr_loglik(self, cur_samp, epoch):

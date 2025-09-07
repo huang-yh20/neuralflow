@@ -1,52 +1,18 @@
-#  NeuralFlow - version 3
+2025/9/6 
+1. 完成了数据清洗新增加的部分，具体而言，是防止任意一个mini batch中出现任意一个神经元发放率都为0的情况，通过这种方式防止了运行的时候出现NaN的情况
+2. 尝试进行了对挑出来的两个脑区进行了大规模的实验，发现出现的结果还是比较病态，势函数会出现病态的大的情况。
+3. 调小了学习率进行了实验，发现实验后确实出现的结果正常了很多，不会再出现病态的势函数了。然而，此时神经元还是偏向单边的发放率
+4. 换了初始化的方法后，发现单边的情况少了很多，但似乎都没怎么优化出有receptive field的情况，需要再进一步查看
+5. 发现如果loss先下降后卡住，然后又开始下降，并且下降得越来越快，多半就是过拟合了。
 
-## Short description
+2025/9/7
+1. 通过检查实验结果，发现还是存在着不少问题。
+    a. left_medulla脑区不知道为什么实验结果跑出来仍然是NaN
+    b. right_ALM脑区跑出来仍旧是非常操蛋的单边的情况，也就是所有神经元的发放都是receptive field在单边而不是两边都有，为什么会出现这么诡异的情况？
 
-Computational framework for modeling neural activity with continuous latent Langevin dynamics. 
+从这个实验结果来看，接下来需要做的任务有
+1. 首先是需要找到出现NaN的原因，然后debug。debug完成后对于所有脑区进行大规模的实验，以此确定前面说的情况是不是普遍的。
+2. 从单个特例试图解决这个单边的问题。可以做的方法有：a. 画出每个神经元发放率随着时间的变化，确定到底有没有随着时间发放率变化的神经元。b. 再次观察一下边界条件是怎么设定的。
 
-Quick installation: ```pip install git+https://github.com/engellab/neuralflow```
+一个感悟：科研不是做题，而是一个需要工程化的大规模试错的东西，熟悉这个工程对于以后做什么事情都有用，是真的可以锻炼自己。
 
-The source code for the following publications:
-
-1) **M Genkin, KV Shenoy, C Chandrasekaran, TA Engel, The dynamics and geometry of choice in premotor cortex, bioRxiv (2023)** 
-
-**Link:** https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10401920/
-
-2) **Genkin, M., Hughes, O. and Engel, T.A. Learning non-stationary Langevin dynamics from stochastic observations of latent trajectories. Nat Commun 12, 5986 (2021)**.
-
-**Link:** https://rdcu.be/czqGP
-
-3) **Genkin, M., Engel, T.A. Moving beyond generalization to accurate interpretation of flexible models. Nat Mach Intell 2, 674–683 (2020)**.  
-
-**Link:** https://www.nature.com/articles/s42256-020-00242-6/
-
-**Free access:** https://rdcu.be/b9cW3
-
-## Installation
-Package only: pip install git+https://github.com/engellab/neuralflow
-
-Package with examples: 
-
-    git clone https://github.com/engellab/neuralflow
-    cd neuralflow
-    pip install .
-
-If you have issues with Cython extension, and want to use precomplied .c instead, open setup.py and change line 7 to USE_CYTHON = 0
-
-## GPU support
-
-If your platform has CUDA-enabled GPU, install cupy package. Then you can use
-GPU device for optimization.
-Package passes unit tests with cupy-cuda12x==12.2.0
-
-## documentation
-
-https://neuralflow.readthedocs.io/
-
-## Getting started
-
-See examples 
-
-## Deep dive
-
-See tests

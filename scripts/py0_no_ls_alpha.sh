@@ -20,7 +20,9 @@ export PYTHONPATH="/work1/yuhan/neuralflow:$PYTHONPATH"
 
 # nohup后台运行，并将输出写入日志文件
 cd $PY_DIR
-nohup python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" --task_name "$TASK_NAME" > "$LOG_DIR/py0_try_${BRAIN_REGION}_${DATE}_$(date +'%Y%m%d_%H%M%S').log" 2>&1 &
+for alpha in 0.05 0.005 0.0005; do
+    nohup python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" --task_name "no_ls_alpha_${alpha}" --alpha "$alpha" > "$LOG_DIR/py0_single_${BRAIN_REGION}_${DATE}_no_ls_alpha_${alpha}_$(date +'%Y%m%d_%H%M%S').log" 2>&1 &
+done
 # python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" > "$LOG_DIR/py0_try_${BRAIN_REGION}_${DATE}.log"
 
 echo "已后台启动 $PY_SCRIPT, 参数: brain_region=${BRAIN_REGION}, date=${DATE}, task_name=${TASK_NAME}"

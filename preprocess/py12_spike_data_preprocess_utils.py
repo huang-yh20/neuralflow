@@ -95,3 +95,53 @@ def preprocess_spike_data(spike_counts, trial_count, timeepoch):
             print(f"Error processing trial {trial_idx}: {e}")
     
     return spiketimes, timeepoch
+
+
+# 发现neuralflow库可能有潜在的bug，就是如果两个spike重叠，可能会出现NaN的情况
+
+def preprocess_spike_data_1(spike_counts, trial_count, timeepoch):
+    """
+    Preprocess spike count data into spiketimes format using vectorized operations.
+    If a given time bin contains multiple spikes, they are spread evenly within the dt interval.
+    
+    Parameters:
+        spike_counts: numpy array of shape (trial_count * time_points, num_neuron).
+                      Each entry is the number of spikes at that time point.
+        trial_count:  int, number of trials.
+        timeepoch:    list of tuples, each tuple (start, end) defines the time epoch for a trial.
+    
+    Returns:
+        spiketimes: numpy array of shape (num_neuron, trial_count) with dtype=object.
+                    Each entry is a 1D numpy array of spike times for that neuron on that trial.
+        timeepoch:  the provided list of (start, end) tuples.
+    """
+    total_rows, num_neuron = spike_counts.shape
+    time_points = total_rows // trial_count
+    spiketimes = np.empty((num_neuron, trial_count), dtype=object)
+
+    # Loop over trials
+    for trial_idx, (start, end) in enumerate(timeepoch):
+        dt = (end - start) / time_points
+        # Create time bins: these represent the start time of each bin
+        times = start + np.arange(time_points) * dt
+        # Extract trial data of shape (time_points, num_neuron)
+        trial_data = spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, :].astype(int)
+        
+        # Process each neuron; here we vectorize over time bins by using np.repeat plus a computed offset
+        spiketimes_trial = []
+        for neuron in range(num_neuron):
+            counts = trial_data[:, neuron]
+            if counts.sum() == 0:
+                spiketimes_trial.append(np.array([]))
+                continue
+            # For every bin with nonzero spike count, generate evenly distributed offsets within dt.
+            # This is done in a list comprehension over time bins.
+            spike_times_neuron = np.concatenate([
+                times[i] + dt * (np.arange(1, count + 1) / (count + 1))
+                for i, count in enumerate(counts) if count > 0
+            ])
+            spiketimes_trial.append(spike_times_neuron)
+        
+        spiketimes[:, trial_idx] = np.array(spiketimes_trial, dtype=object)
+
+    return spiketimes, timeepoch

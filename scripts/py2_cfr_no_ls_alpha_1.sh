@@ -5,7 +5,7 @@ conda activate nf
 
 BRAIN_REGION="left_Medulla"
 DATE="57"
-TASK_NAME="no_ls"
+TASK_NAME="constant_init_fr_no_ls"
 
 # 定义日志目录和Python脚本路径
 LOG_DIR="/work1/yuhan/neuralflow/logs"
@@ -20,7 +20,9 @@ export PYTHONPATH="/work1/yuhan/neuralflow:$PYTHONPATH"
 
 # nohup后台运行，并将输出写入日志文件
 cd $PY_DIR
-nohup python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" --task_name "$TASK_NAME" > "$LOG_DIR/py0_try_${BRAIN_REGION}_${DATE}_$(date +'%Y%m%d_%H%M%S').log" 2>&1 &
+for alpha in 0.05 0.01 0.005 0.001 0.0005; do
+    nohup python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" --init_fr "constant" --task_name "cfr_no_ls_alpha_${alpha}" --alpha "$alpha" > "$LOG_DIR/$(date +'%Y%m%d_%H%M%S')_py0_single_${BRAIN_REGION}_${DATE}_no_ls_alpha_${alpha}.log" 2>&1 &
+done
 # python "$PY_SCRIPT" --brain_region "$BRAIN_REGION" --date "$DATE" > "$LOG_DIR/py0_try_${BRAIN_REGION}_${DATE}.log"
 
 echo "已后台启动 $PY_SCRIPT, 参数: brain_region=${BRAIN_REGION}, date=${DATE}, task_name=${TASK_NAME}"
