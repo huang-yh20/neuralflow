@@ -17,6 +17,7 @@ parser.add_argument('--date', required=True, help="Date parameter")
 parser.add_argument('--alpha', default=0.05, help="Alpha parameter")
 parser.add_argument('--task_name', required=True, help="task name")
 parser.add_argument('--init_fr', default='unity_slope', help="initialization for firing rate")
+parser.add_argument('--boundary', default='abs', help="boundary condition")
 args = parser.parse_args()
 
 brain_region = args.brain_region
@@ -24,6 +25,12 @@ date = args.date
 task_name = args.task_name
 alpha = float(args.alpha)
 init_fr = args.init_fr
+if args.boundary == 'abs':
+    boundary_mode = 'absorbing'
+elif args.boundary == 'ref':
+    boundary_mode = 'reflecting'
+else:
+    raise ValueError
 
 if init_fr == 'unity_slope':
     slope = 1
@@ -43,9 +50,9 @@ num_neurons_ori = spike_counts_ori.shape[1]
 
 # ---------- Preprocessing ----------
 # Reshape and select the proper time segment
-spike_counts_reshape_ori = spike_counts_ori.reshape((-1, trial_counts, num_neurons_ori))
+spike_counts_reshape_ori = spike_counts_ori.reshape((-1, trial_counts, num_neurons_ori), order='F')
 spike_counts_reshape = spike_counts_reshape_ori[57:150, :, :]
-spike_counts = spike_counts_reshape.reshape((-1, num_neurons_ori))
+spike_counts = spike_counts_reshape.reshape((-1, num_neurons_ori), order='F')
 time_epoch = [(0, 1.86)] * int(trial_counts)
 
 # Use clean_spike_data_1 to remove extreme cases
@@ -120,7 +127,6 @@ ls_options = {
     'C_opt': {'epoch_schedule': [], 'nSearchPerEpoch': 3, 'max_fun_eval': 2},
     'D_opt': {'epoch_schedule': [], 'nSearchPerEpoch': 3, 'max_fun_eval': 25}
 } # 暂时不对结果进行line search优化
-boundary_mode = 'absorbing'
 
 optimization1 = neuralflow.optimization.Optimization(
     [data_1],

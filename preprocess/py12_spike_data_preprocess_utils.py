@@ -56,7 +56,7 @@ def clean_spike_data_2(spike_counts, trial_count, timeepoch):
     
     return new_spike_counts, trial_count, timeepoch
 
-
+# 将spike_cpunts模式转换为spike_times
 def preprocess_spike_data(spike_counts, trial_count, timeepoch):
     """
     Preprocess spike count data into spiketimes format using vectorized operations.
@@ -96,9 +96,7 @@ def preprocess_spike_data(spike_counts, trial_count, timeepoch):
     
     return spiketimes, timeepoch
 
-
-# 发现neuralflow库可能有潜在的bug，就是如果两个spike重叠，可能会出现NaN的情况
-
+# 与上面的不一样的
 def preprocess_spike_data_1(spike_counts, trial_count, timeepoch):
     """
     Preprocess spike count data into spiketimes format using vectorized operations.
@@ -145,3 +143,39 @@ def preprocess_spike_data_1(spike_counts, trial_count, timeepoch):
         spiketimes[:, trial_idx] = np.array(spiketimes_trial, dtype=object)
 
     return spiketimes, timeepoch
+
+def spiketimes_to_spikecounts(spiketimes, timeepoch, time_points=250):
+    """
+    Convert spiketimes format back to spike_counts.
+
+    Parameters:
+        spiketimes: numpy array of shape (num_neuron, trial_count), dtype=object.
+                    Each entry is a 1D numpy array of spike times for that neuron on that trial.
+        timeepoch:  list of tuples, each tuple (start, end) defines the time epoch for a trial.
+        time_points: int, number of time bins per trial.
+
+    Returns:
+        spike_counts: numpy array of shape (trial_count * time_points, num_neuron).
+    """
+    if not isinstance(spiketimes, np.ndarray):
+        spiketimes = np.array(spiketimes, dtype=object)
+
+    num_neuron, trial_count = spiketimes.shape
+    spike_counts = np.zeros((trial_count * time_points, num_neuron), dtype=int)
+
+    for trial_idx, (start, end) in enumerate(timeepoch):
+        dt = (end - start) / time_points
+        bin_edges = np.linspace(start, end, time_points + 1)
+        for neuron in range(num_neuron):
+            spikes = spiketimes[neuron, trial_idx]
+            if spikes.size == 0:
+                continue
+            # Digitize spike times into bins
+            bin_idx = np.digitize(spikes, bin_edges) - 1
+            # Remove spikes that fall outside the bins
+            bin_idx = bin_idx[(bin_idx >= 0) & (bin_idx < time_points)]
+            # Count spikes per bin
+            counts, _ = np.histogram(bin_idx, bins=np.arange(time_points + 1) - 0.5)
+            spike_counts[trial_idx * time_points:(trial_idx + 1) * time_points, neuron] = counts
+
+    return spike_counts
